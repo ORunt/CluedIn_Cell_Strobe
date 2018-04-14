@@ -2,11 +2,13 @@
 #include "stm32f0xx_hal.h"
 
 // PORT A (IN)
-#define LDR_NORMAL		0x01	// GPIOA_0
-#define LDR_LOTS			0x02	// GPIOA_1
-#define RESET_BUTTON	0x04	// GPIOA_2
-#define DE_ACTIVATE		0x10	// GPIOA_4
-#define STROBE_PWR		0x20	// GPIOA_5
+//      PWM_OUT       0x008 // GPI0A_3
+#define LDR_NORMAL		0x010	// GPIOA_4
+#define STROBE_PWR		0x020	// GPIOA_5
+#define LDR_LOTS			0x080	// GPIOA_7
+#define RESET_BUTTON	0x100	// GPIOA_8
+#define DE_ACTIVATE		0x200	// GPIOA_9
+
 
 // PORT B (OUT)
 #define LASER_NORMAL	0x01	// GPIOB_0
@@ -132,7 +134,19 @@ static void MX_GPIO_Init(void)
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 	
 	// Inputs
-	GPIO_InitStruct.Pin = LDR_NORMAL | LDR_LOTS | RESET_BUTTON | DE_ACTIVATE | STROBE_PWR;
+	GPIO_InitStruct.Pin = RESET_BUTTON | DE_ACTIVATE;
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  
+  GPIO_InitStruct.Pin = STROBE_PWR;
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  
+  GPIO_InitStruct.Pin = LDR_NORMAL | LDR_LOTS;
 	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -183,6 +197,20 @@ int main(void)
   MX_TIM2_Init();
   MX_ADC_Init();
 	
+  /*
+  LDR_NORMAL		- when laser is on, port is active (3v)
+  STROBE_PWR		- is active high (when on, then 3V is pumping in)
+  LDR_LOTS			- when laser is on, port is active (3v)
+  RESET_BUTTON	- Is active low (When idle, its at 3v, when pressed it goes to 0v)
+  DE_ACTIVATE		- Is active low (When idle, its at 3v, when pressed it goes to 0v)
+
+  LASER_NORMAL	- Active High
+  LASER_LOTS		- Active High
+  RED_GRN_LIGHT	- normally says lazer on, when pushed high the light says lazer green
+  READY					- Active low (when high, the light is off, when low the light is on)
+  LOW_POWER			- Active low (when high, the light is off, when low the light is on)
+  */
+  
 	GPIOB->ODR |= (LASER_NORMAL | 					// turn laser_normal on
 								READY);										// turn ready LED off
 
@@ -195,19 +223,19 @@ int main(void)
 				GPIOB->ODR |= LASER_LOTS;					// turn laser_lots on
 			}
 			
-			if((GPIOA->IDR & RESET_BUTTON) &&		// has reset_button been pushed?
+			if(!(GPIOA->IDR & RESET_BUTTON) &&	// has reset_button been pushed?
 				(GPIOA->IDR & LDR_LOTS) &&				// AND laser_lots beam active?
 				(GPIOA->IDR & LDR_NORMAL))				// AND laser_normal beam active?
 			{
 				GPIOB->ODR &= ~LASER_LOTS;				// turn laser_lots off
 			}
 			
-			if((GPIOA->IDR & DE_ACTIVATE) &&		// has de_activate been pushed?
+			if(!(GPIOA->IDR & DE_ACTIVATE) &&		// has de_activate been pushed?
 				((GPIOB->ODR & LASER_LOTS) == 0)&&// AND laser_lots beam off?
 				(GPIOA->IDR & LDR_NORMAL))				// AND laser_normal beam active?
 			{
-				GPIOB->ODR &= ~LASER_NORMAL; 			// turn laser_normal off 
-				GPIOB->ODR |= RED_GRN_LIGHT;			// change light to green
+				GPIOB->ODR &= ~(LASER_NORMAL | READY);    // turn laser_normal off; turn Ready light on
+				GPIOB->ODR |= RED_GRN_LIGHT | LOW_POWER;  // change light to green; Turn Low pwr Light off
 				laser_loop = 0;
 			}
 		}
